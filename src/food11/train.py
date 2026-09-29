@@ -105,73 +105,93 @@ def evaluate(model, loader, criterion, device):
 
     with torch.no_grad():
         for images, labels in loader:
+
             images = images.to(device)
             labels = labels.to(device)
 
             outputs = model(images)
-            loss = criterion(outputs, labels)
 
-            total_loss += loss.item() * images.size(0)
+            loss = criterion(
+                outputs,
+                labels,
+            )
+
+            total_loss += (
+                loss.item()
+                * images.size(0)
+            )
 
             predictions = outputs.argmax(dim=1)
 
-            correct += (predictions == labels).sum().item()
+            correct += (
+                predictions == labels
+            ).sum().item()
+
             total += labels.size(0)
 
-    average_loss = total_loss / total
-    accuracy = correct / total
-
-    return average_loss, accuracy
+    return (
+        total_loss / total,
+        correct / total,
+    )
 
 
 def main():
+
     args = parse_args()
 
     torch.manual_seed(42)
 
     device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
+        "cuda"
+        if torch.cuda.is_available()
+        else "cpu"
     )
 
     print(f"Using device: {device}")
+
 
     train_loader, val_loader, test_loader = create_dataloaders(
         args.dataset,
         args.batch_size,
     )
 
-    # Load pretrained ResNet18
+
     model = resnet18(
         weights=ResNet18_Weights.DEFAULT
     )
 
-    # Replace the original 1000-class output layer
-    # with an 11-class output layer for Food-11
+
     model.fc = nn.Linear(
         model.fc.in_features,
         NUM_CLASSES,
     )
 
+
     model = model.to(device)
 
+
     criterion = nn.CrossEntropyLoss()
+
 
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=args.lr,
     )
 
-    # Connect to local MLflow server
+
     mlflow.set_tracking_uri(
         "http://127.0.0.1:5000"
     )
 
-    # Create/use the food11 experiment
-    mlflow.set_experiment("food11")
+
+    mlflow.set_experiment(
+        "food11"
+    )
+
 
     with mlflow.start_run() as run:
 
-        # Parameters = values chosen before training
+
         mlflow.log_params({
             "dataset": args.dataset,
             "epochs": args.epochs,
@@ -182,7 +202,7 @@ def main():
             "seed": 42,
         })
 
-        # TRAINING LOOP
+
         for epoch in range(args.epochs):
 
             model.train()
@@ -190,28 +210,30 @@ def main():
             total_train_loss = 0.0
             total_train_samples = 0
 
+
             for images, labels in train_loader:
 
                 images = images.to(device)
                 labels = labels.to(device)
 
-                # Reset gradients
+
                 optimizer.zero_grad()
 
-                # Prediction
+
                 outputs = model(images)
 
-                # Calculate loss
+
                 loss = criterion(
                     outputs,
                     labels,
                 )
 
-                # Backpropagation
+
                 loss.backward()
 
-                # Update model weights
+
                 optimizer.step()
+
 
                 total_train_loss += (
                     loss.item()
@@ -222,12 +244,13 @@ def main():
                     images.size(0)
                 )
 
+
             train_loss = (
                 total_train_loss
                 / total_train_samples
             )
 
-            # Validate model
+
             val_loss, val_accuracy = evaluate(
                 model,
                 val_loader,
@@ -235,7 +258,7 @@ def main():
                 device,
             )
 
-            # Log metrics for this epoch
+
             mlflow.log_metric(
                 "train_loss",
                 train_loss,
@@ -254,6 +277,7 @@ def main():
                 step=epoch,
             )
 
+
             print(
                 f"Epoch {epoch + 1}/{args.epochs} | "
                 f"Train Loss: {train_loss:.4f} | "
@@ -261,13 +285,14 @@ def main():
                 f"Val Accuracy: {val_accuracy:.4f}"
             )
 
-        # FINAL TEST
+
         test_loss, test_accuracy = evaluate(
             model,
             test_loader,
             criterion,
             device,
         )
+
 
         mlflow.log_metric(
             "test_accuracy",
@@ -279,25 +304,28 @@ def main():
             test_loss,
         )
 
-        # Move model back to CPU before saving
+
         model = model.cpu()
 
-        # Save trained model to MLflow
+
+        # IMPORTANT:
+        # MLflow 3 compatibility:
+        # use positional artifact path
         mlflow.pytorch.log_model(
             model,
-            name="model",
+            "model",
             serialization_format="pickle",
         )
 
+
         print()
+
         print(
-            f"Test Accuracy: "
-            f"{test_accuracy:.4f}"
+            f"Test Accuracy: {test_accuracy:.4f}"
         )
 
         print(
-            f"Run ID: "
-            f"{run.info.run_id}"
+            f"Run ID: {run.info.run_id}"
         )
 
 

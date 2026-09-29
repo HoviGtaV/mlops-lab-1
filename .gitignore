@@ -1,3 +1,6 @@
 /data
 mlflow.db
 mlruns/
+mlartifacts/
+__pycache__/
+src/**/__pycache__/
