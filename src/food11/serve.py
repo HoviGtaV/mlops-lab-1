@@ -41,11 +41,11 @@ classes = [
 
 
 transform = transforms.Compose([
-    transforms.Resize((128,128)),
+    transforms.Resize((128, 128)),
     transforms.ToTensor(),
     transforms.Normalize(
-        mean=[0.485,0.456,0.406],
-        std=[0.229,0.224,0.225],
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225],
     ),
 ])
 
@@ -62,30 +62,54 @@ async def predict(
     file: UploadFile = File(...)
 ):
 
+    # Read image
     image = Image.open(
         file.file
     ).convert("RGB")
 
 
+    # Apply same preprocessing as training
     image = transform(image)
 
 
+    # Add batch dimension
     image = image.unsqueeze(0)
 
 
+    # Model prediction
     prediction = model.predict(
         image.numpy()
     )
 
 
+    # Convert output to tensor
+    prediction_tensor = torch.tensor(
+        prediction
+    )
+
+
+    # Convert logits/scores to probabilities
+    probabilities = torch.softmax(
+        prediction_tensor,
+        dim=1
+    )
+
+
+    # Get predicted class
     predicted_class = int(
-        torch.tensor(prediction).argmax()
+        probabilities.argmax(
+            dim=1
+        ).item()
+    )
+
+
+    # Get confidence between 0 and 1
+    confidence = float(
+        probabilities.max().item()
     )
 
 
     return {
         "category": classes[predicted_class],
-        "confidence": float(
-            torch.tensor(prediction).max()
-        )
+        "confidence": confidence
     }
