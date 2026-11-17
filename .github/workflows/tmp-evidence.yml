@@ -21,6 +21,7 @@ jobs:
           git commit -m "Regenerate uv.lock (add scikit-learn)" && git push || echo "lock unchanged"
 
   lab3:
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,14 +59,14 @@ jobs:
       - name: Q1 - mlflow container without a volume
         run: |
           docker build -q -t lab-mlflow ./mlflow
-          docker run -d --name m1 -p 5001:5000 lab-mlflow
-          for i in $(seq 1 30); do curl -sf localhost:5001/health && break; sleep 2; done; echo
-          curl -s -X POST localhost:5001/api/2.0/mlflow/experiments/create -H 'Content-Type: application/json' -d '{"name":"persist-test"}'; echo
-          echo "experiments in container 1:"; curl -s 'localhost:5001/api/2.0/mlflow/experiments/search?max_results=10' | python3 -c "import sys,json;print([e['name'] for e in json.load(sys.stdin)['experiments']])"
+          docker run -d --name m1 -p 5000:5000 lab-mlflow
+          for i in $(seq 1 30); do curl -sf localhost:5000/health && break; sleep 2; done; echo
+          curl -s -X POST localhost:5000/api/2.0/mlflow/experiments/create -H 'Content-Type: application/json' -d '{"name":"persist-test"}'; echo
+          echo "experiments in container 1:"; curl -s 'localhost:5000/api/2.0/mlflow/experiments/search?max_results=10' | python3 -c "import sys,json;print([e['name'] for e in json.load(sys.stdin)['experiments']])"
           docker stop m1 >/dev/null && docker rm m1 >/dev/null
-          docker run -d --name m2 -p 5001:5000 lab-mlflow
-          for i in $(seq 1 30); do curl -sf localhost:5001/health && break; sleep 2; done; echo
-          echo "experiments in container 2 (same image):"; curl -s 'localhost:5001/api/2.0/mlflow/experiments/search?max_results=10' | python3 -c "import sys,json;print([e['name'] for e in json.load(sys.stdin)['experiments']])"
+          docker run -d --name m2 -p 5000:5000 lab-mlflow
+          for i in $(seq 1 30); do curl -sf localhost:5000/health && break; sleep 2; done; echo
+          echo "experiments in container 2 (same image):"; curl -s 'localhost:5000/api/2.0/mlflow/experiments/search?max_results=10' | python3 -c "import sys,json;print([e['name'] for e in json.load(sys.stdin)['experiments']])"
           docker rm -f m2 >/dev/null
       - name: Q6/Q7 - compose up with an empty registry
         run: |
