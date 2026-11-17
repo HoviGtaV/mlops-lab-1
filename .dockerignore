@@ -1,6 +1,15 @@
 .venv/
 data/
 mlruns/
+mlartifacts/
+mlflow_artifacts/
 mlflow.db
 .git/
+.github/
 __pycache__/
+.pytest_cache/
+.ruff_cache/
+tests/
+lab/
+frontend/
+mlflow/

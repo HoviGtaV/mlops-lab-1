@@ -1,4 +1,4 @@
-﻿"""
+"""
 src/food11/data.py
 
 Prepares the Food-11 dataset for training.
@@ -28,7 +28,7 @@ from PIL import Image
 
 # Order matters: this must match the class_id encoded in each raw filename.
 # e.g. a file named "3_128.jpg" has class_id 3 -> "Egg".
-CATEGORIES = [
+CLASSES = [
     "Bread",
     "Dairy product",
     "Dessert",
@@ -41,6 +41,7 @@ CATEGORIES = [
     "Soup",
     "Vegetable-Fruit",
 ]
+CATEGORIES = CLASSES  # backwards-compatible name used in Labs 1-4
 
 SPLITS = ["training", "evaluation", "validation"]
 
@@ -48,17 +49,21 @@ RAW_DIR = Path("data/food11_raw")
 PROCESSED_DIR = Path("data/food11_processed")
 MINI_DIR = Path("data/food11_processed_mini")
 
-IMAGE_SIZE = (128, 128)
+IMAGE_SIZE = 128
 MAX_PER_CATEGORY = 100  # cap per category per split, for the mini dataset
 
 VALID_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
 
-def category_from_filename(stem: str) -> str:
-    """Food-11 raw files are named '<class_id>_<image_id>' (extension stripped)."""
-    class_id_str = stem.split("_")[0]
-    class_id = int(class_id_str)
-    return CATEGORIES[class_id]
+def category_from_filename(filename: str) -> str:
+    """'3_120.jpg' -> 'Egg'. Works with or without the extension."""
+    class_id = int(Path(filename).stem.split("_")[0])
+    return CLASSES[class_id]
+
+
+def resize_image(img: Image.Image, size: int = IMAGE_SIZE) -> Image.Image:
+    """Returns an RGB image of size x size."""
+    return img.convert("RGB").resize((size, size))
 
 
 def process_split(split: str, max_per_category: int | None = None) -> dict[str, int]:
@@ -91,7 +96,7 @@ def process_split(split: str, max_per_category: int | None = None) -> dict[str, 
             out_dirs.append(MINI_DIR / split / category)
 
         with Image.open(image_path) as img:
-            img = img.convert("RGB").resize(IMAGE_SIZE)
+            img = resize_image(img)
             for out_dir in out_dirs:
                 out_dir.mkdir(parents=True, exist_ok=True)
                 img.save(out_dir / image_path.name)

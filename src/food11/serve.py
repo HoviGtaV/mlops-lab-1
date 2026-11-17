@@ -1,29 +1,15 @@
 import os
+from contextlib import asynccontextmanager
+from typing import Annotated
 
 import mlflow
+import numpy as np
 import torch
-from fastapi import FastAPI, File, UploadFile
-from PIL import Image
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from PIL import Image, UnidentifiedImageError
 from torchvision import transforms
 
-
-app = FastAPI()
-
-
-# MLflow server address
-mlflow.set_tracking_uri(
-    os.getenv(
-        "MLFLOW_TRACKING_URI",
-        "http://127.0.0.1:5000"
-    )
-)
-
-
-# Load model once when API starts
-model = mlflow.pyfunc.load_model(
-    "models:/food11@champion"
-)
-
+MODEL_URI = os.getenv("MODEL_URI", "models:/food11@champion")
 
 classes = [
     "Bread",
@@ -39,77 +25,64 @@ classes = [
     "Vegetable-Fruit",
 ]
 
+transform = transforms.Compose(
+    [
+        transforms.Resize((128, 128)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225],
+        ),
+    ]
+)
 
-transform = transforms.Compose([
-    transforms.Resize((128, 128)),
-    transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225],
-    ),
-])
+# Module-level so tests can replace it with a fake model.
+model = None
+
+
+def load_model():
+    """Load the champion model from MLflow, unless SKIP_MODEL is set
+    (unit tests and the CI smoke test run without an MLflow server)."""
+    global model
+    if os.environ.get("SKIP_MODEL"):
+        return
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))
+    model = mlflow.pyfunc.load_model(MODEL_URI)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Same role as @app.on_event("startup"), which FastAPI now deprecates.
+    load_model()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/health")
 def health():
-    return {
-        "status": "ok"
-    }
+    return {"status": "ok", "model_loaded": model is not None}
 
 
 @app.post("/predict")
-async def predict(
-    file: UploadFile = File(...)
-):
+def predict(file: Annotated[UploadFile, File()]):
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
 
-    # Read image
-    image = Image.open(
-        file.file
-    ).convert("RGB")
+    try:
+        image = Image.open(file.file).convert("RGB")
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="File is not a valid image") from None
 
+    # Same preprocessing as training, plus a batch dimension.
+    batch = transform(image).unsqueeze(0).numpy()
 
-    # Apply same preprocessing as training
-    image = transform(image)
+    # The model returns one row of 11 raw scores (logits) per image.
+    scores = torch.tensor(np.asarray(model.predict(batch), dtype=np.float32))
+    probabilities = torch.softmax(scores, dim=1)
 
+    predicted_class = int(probabilities.argmax(dim=1).item())
+    confidence = float(probabilities.max().item())
 
-    # Add batch dimension
-    image = image.unsqueeze(0)
-
-
-    # Model prediction
-    prediction = model.predict(
-        image.numpy()
-    )
-
-
-    # Convert output to tensor
-    prediction_tensor = torch.tensor(
-        prediction
-    )
-
-
-    # Convert logits/scores to probabilities
-    probabilities = torch.softmax(
-        prediction_tensor,
-        dim=1
-    )
-
-
-    # Get predicted class
-    predicted_class = int(
-        probabilities.argmax(
-            dim=1
-        ).item()
-    )
-
-
-    # Get confidence between 0 and 1
-    confidence = float(
-        probabilities.max().item()
-    )
-
-
-    return {
-        "category": classes[predicted_class],
-        "confidence": confidence
-    }
+    return {"category": classes[predicted_class], "confidence": confidence}

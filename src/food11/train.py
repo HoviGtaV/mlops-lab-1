@@ -1,4 +1,5 @@
 import argparse
+import os
 from pathlib import Path
 
 import mlflow
@@ -7,8 +8,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from torchvision.models import resnet18, ResNet18_Weights
-
+from torchvision.models import ResNet18_Weights, resnet18
 
 NUM_CLASSES = 11
 
@@ -38,6 +38,12 @@ def parse_args():
         "--batch-size",
         type=int,
         default=32,
+    )
+
+    parser.add_argument(
+        "--register",
+        action="store_true",
+        help="register the trained model as a new version of 'food11'",
     )
 
     return parser.parse_args()
@@ -180,7 +186,7 @@ def main():
 
 
     mlflow.set_tracking_uri(
-        "http://127.0.0.1:5000"
+        os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
     )
 
 
@@ -311,11 +317,15 @@ def main():
         # IMPORTANT:
         # MLflow 3 compatibility:
         # use positional artifact path
-        mlflow.pytorch.log_model(
+        model_info = mlflow.pytorch.log_model(
             model,
             "model",
             serialization_format="pickle",
         )
+
+        if args.register:
+            version = mlflow.register_model(model_info.model_uri, "food11")
+            print(f"Registered food11 version {version.version}")
 
 
         print()
