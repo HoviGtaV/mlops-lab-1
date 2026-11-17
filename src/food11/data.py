@@ -58,7 +58,7 @@ VALID_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 def category_from_filename(filename: str) -> str:
     """'3_120.jpg' -> 'Egg'. Works with or without the extension."""
     class_id = int(Path(filename).stem.split("_")[0])
-    return CLASSES[class_id + 1]  # BUG on purpose (Lab 5 branch protection demo)
+    return CLASSES[class_id]
 
 
 def resize_image(img: Image.Image, size: int = IMAGE_SIZE) -> Image.Image:
