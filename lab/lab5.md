@@ -122,25 +122,34 @@ $$se = \sqrt{\frac{0.7536 \times 0.2464}{1096}} = 0.0130 \qquad 2\,se = 0.0260$$
 
 So **`2 * se` is about 2.6 accuracy points**. A candidate must reach **≥ 0.7797** to replace the champion. A gain of 1–2 points is within noise for a test set of this size.
 
-**Candidates** (TODO: fill in after running). Run these in the VS Code terminal, from the repo root:
+**Candidates.** Both runs used `train.py --register` on the mini dataset, with seed 42 and batch size 32. They were trained against my registry and gated with `promote.py`:
+
+| Version | Settings | val_accuracy | test_accuracy | vs champion | Threshold | Decision |
+|---|---|---|---|---|---|---|
+| v1 (champion) | lr 1e-4, 5 epochs | 0.7299 | 0.7536 | — | — | stays `champion` |
+| v2 | lr 1e-5, 5 epochs | 0.5073 | 0.5246 | −22.9 pts | 0.7797 | **rejected** → `challenger` |
+| v3 | lr 1e-4, 10 epochs | 0.7418 | 0.7646 | +1.1 pts | 0.7797 | **rejected** → `challenger` (moved from v2) |
+
+```
+candidate v3: test_accuracy = 0.7646
+champion  v1: test_accuracy = 0.7536
+n = 1096, se = 0.0130, threshold = acc_champion + 2*se = 0.7797
+decision: rejected (champion v1 kept)
+```
+
+- **v2:** a learning rate of 1e-5 is far too small. After 5 epochs it reaches only 52% and is clearly worse. The gate rejects it, as it should.
+- **v3:** this is the interesting case. It is *better* than the champion on paper (+1.1 points), but that gain is less than one standard error (0.85 se), so it can't be told apart from test-set noise with 1,096 images. The gate keeps v1 as `champion` and records v3 as `challenger`. A naive "highest accuracy wins" rule would have swapped the production model for a difference that may not exist. Training also shows overfitting: train loss falls to 0.01 while val loss stays around 0.84, so more epochs alone won't buy the 2.6 points needed.
+
+Final registry state: `champion → v1`, `challenger → v3`. Each candidate version carries the tags `gate_decision`, `gate_candidate_acc`, `gate_champion_acc`, `gate_champion_version`, `gate_se`, `gate_threshold` and `gate_n` (MLflow UI → Models → food11 → Version n).
+
+To reproduce, run from the repo root with the registry up (`docker compose up -d mlflow`):
 
 ```powershell
-docker compose up -d mlflow          # registry at http://127.0.0.1:5000 (Lab 4)
-uv sync
-# candidate A: very small learning rate (expected: too weak -> challenger)
 uv run python src/food11/train.py --dataset mini --epochs 5  --lr 0.00001 --batch-size 32 --register
-# candidate B: best settings (champion's lr, more epochs)
 uv run python src/food11/train.py --dataset mini --epochs 10 --lr 0.0001  --batch-size 32 --register
 uv run python src/food11/promote.py --version 2
 uv run python src/food11/promote.py --version 3
 ```
-
-| Candidate | Settings | test_accuracy | Threshold | Decision |
-|---|---|---|---|---|
-| v2 | lr 1e-5, 5 epochs | | 0.7797 | |
-| v3 | lr 1e-4, 10 epochs | | 0.7797 | |
-
-`promote.py` also writes `gate_decision`, `gate_candidate_acc`, `gate_champion_acc`, `gate_se`, `gate_threshold` and `gate_n` as tags on each version (visible in the MLflow UI under Models → food11 → Version n).
 
 ## Question 11 — How can `promote.py` run automatically after training?
 
