@@ -9,6 +9,9 @@ services:
 
   inference:
     build: .
+    # depends_on only waits for the mlflow container to start, not for the server
+    # to accept connections; if the model can't be loaded yet, try again.
+    restart: on-failure
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
     depends_on:
