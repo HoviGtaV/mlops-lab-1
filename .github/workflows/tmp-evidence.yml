@@ -1,0 +1,88 @@
+# TEMPORARY (removed before merge): regenerates uv.lock and collects Docker
+# measurements for the Lab 3 / Lab 4 write-ups.
+name: tmp-evidence
+on:
+  push:
+    branches: [lab-fixes]
+    paths: [.github/workflows/tmp-evidence.yml]
+permissions:
+  contents: write
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv lock
+      - run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add uv.lock
+          git commit -m "Regenerate uv.lock (add scikit-learn)" && git push || echo "lock unchanged"
+
+  lab3:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: multi-stage image (repo Dockerfile)
+        run: docker build -q -t food11-api:multi .
+      - name: naive single-stage image
+        run: |
+          cat > Dockerfile.single <<'DOCKER'
+          FROM python:3.12
+          WORKDIR /app
+          COPY . .
+          RUN pip install uv && uv sync --frozen --no-dev --no-install-project
+          ENV PATH="/app/.venv/bin:$PATH"
+          EXPOSE 8000
+          CMD ["uvicorn", "src.food11.serve:app", "--host", "0.0.0.0", "--port", "8000"]
+          DOCKER
+          docker build -q -f Dockerfile.single -t food11-api:single .
+      - name: SIZES
+        run: docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep food11
+      - name: HISTORY multi
+        run: docker history --format '{{.Size}}\t{{.CreatedBy}}' food11-api:multi | cut -c1-140
+      - name: HISTORY single
+        run: docker history --format '{{.Size}}\t{{.CreatedBy}}' food11-api:single | cut -c1-140
+      - name: CACHE after editing serve.py
+        run: |
+          echo "# cache test" >> src/food11/serve.py
+          start=$(date +%s)
+          docker build --progress=plain -t food11-api:multi . 2>&1 | grep -E "^#[0-9]+ \[|CACHED|DONE" | head -40
+          echo "rebuild took $(( $(date +%s) - start ))s"
+
+  lab4:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Q1 - mlflow container without a volume
+        run: |
+          docker build -q -t lab-mlflow ./mlflow
+          docker run -d --name m1 -p 5001:5000 lab-mlflow
+          for i in $(seq 1 30); do curl -sf localhost:5001/health && break; sleep 2; done; echo
+          curl -s -X POST localhost:5001/api/2.0/mlflow/experiments/create -H 'Content-Type: application/json' -d '{"name":"persist-test"}'; echo
+          echo "experiments in container 1:"; curl -s 'localhost:5001/api/2.0/mlflow/experiments/search?max_results=10' | python3 -c "import sys,json;print([e['name'] for e in json.load(sys.stdin)['experiments']])"
+          docker stop m1 >/dev/null && docker rm m1 >/dev/null
+          docker run -d --name m2 -p 5001:5000 lab-mlflow
+          for i in $(seq 1 30); do curl -sf localhost:5001/health && break; sleep 2; done; echo
+          echo "experiments in container 2 (same image):"; curl -s 'localhost:5001/api/2.0/mlflow/experiments/search?max_results=10' | python3 -c "import sys,json;print([e['name'] for e in json.load(sys.stdin)['experiments']])"
+          docker rm -f m2 >/dev/null
+      - name: Q6/Q7 - compose up with an empty registry
+        run: |
+          touch mlflow.db && mkdir -p mlartifacts
+          docker compose up -d --build --quiet-pull 2>&1 | tail -5
+          sleep 45
+          echo "=== docker compose ps"; docker compose ps --format 'table {{.Service}}\t{{.Status}}\t{{.Ports}}'
+          echo "=== inference logs (tail)"; docker compose logs inference 2>&1 | grep -E "Error|Exception|RESOURCE_DOES_NOT_EXIST|Started|Uvicorn|Waiting|refused" | tail -8
+          echo "=== restart count"; docker inspect -f '{{.RestartCount}} {{.State.Status}}' $(docker compose ps -q inference)
+      - name: Q10 - down / down -v with bind mounts
+        run: |
+          curl -s -X POST localhost:5000/api/2.0/mlflow/experiments/create -H 'Content-Type: application/json' -d '{"name":"survives?"}'; echo
+          docker compose down 2>&1 | tail -1; docker compose up -d 2>&1 | tail -1
+          for i in $(seq 1 30); do curl -sf localhost:5000/health >/dev/null && break; sleep 2; done
+          echo "after down/up:"; curl -s 'localhost:5000/api/2.0/mlflow/experiments/search?max_results=10' | python3 -c "import sys,json;print([e['name'] for e in json.load(sys.stdin)['experiments']])"
+          docker compose down -v 2>&1 | tail -1; docker compose up -d 2>&1 | tail -1
+          for i in $(seq 1 30); do curl -sf localhost:5000/health >/dev/null && break; sleep 2; done
+          echo "after down -v/up:"; curl -s 'localhost:5000/api/2.0/mlflow/experiments/search?max_results=10' | python3 -c "import sys,json;print([e['name'] for e in json.load(sys.stdin)['experiments']])"
+          ls -la mlflow.db
+          docker compose down

@@ -1,7 +1,7 @@
 [project]
 name = "mlops-lab-1"
 version = "0.1.0"
-description = "Add your description here"
+description = "Food-11 image classifier: DVC data, MLflow tracking, Docker serving and CI/CD"
 readme = "README.md"
 authors = [
     { name = "HoviGtaV", email = "hovig.madjarian@net.usj.edu.lb" }
@@ -12,6 +12,7 @@ dependencies = [
     "mlflow",
     "pillow>=12.3.0",
     "python-multipart",
+    "scikit-learn",
     "torch",
     "torchvision",
     "uvicorn",
